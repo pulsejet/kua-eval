@@ -97,8 +97,7 @@ appendonly yes
 class Cli11(Application):
     def start(self):
         Application.start(
-            self, 'python3 /mini-ndn/kmn/rcli.py {}'.format(SERV_IP), logfile='cli11.log')
-
+            self, 'python3 /mini-ndn/kmn/cli11.py {}'.format(SERV_IP), logfile='cli11.log')
 
 if __name__ == '__main__':
     setLogLevel('info')
@@ -142,21 +141,31 @@ if __name__ == '__main__':
 
     SERV_IP = cip
 
-    # Start first client
-    cli11 = AppManager(ndn, [cli1], Cli11)
+    # Collect stats till process exits
+    curr_time = 1
+    def collect_for(app_managers):
+        global curr_time
+        period = 0.1
+        while True:
+            running = False
+            for am in app_managers:
+                if am.apps[0].process.poll() is None:
+                    running = True
+                    break
+            if not running:
+                break
 
-    # Collect stats
-    t = 0.1
-    total_time = 20
-    for i in range(int(total_time/t)):
-        collect_all_stats(round((i+1)*t, 1), ndn.net)
-        sleep(t)
+            collect_all_stats(round(curr_time*period, 1), ndn.net)
+            curr_time += 1
+            sleep(period)
+
+    # Start insertion
+    cli11 = AppManager(ndn, [cli1], Cli11)
+    collect_for([cli11])
 
     #info('Starting NFD on nodes\n')
     #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
     #MiniNDNCLI(ndn.net)
-
-    #collect_all_stats(-1, ndn.net)
 
     ndn.stop()
