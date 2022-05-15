@@ -70,7 +70,7 @@ def collect_all_stats(id, net):
         tx_bytes += result[3]
 
     with open('/mini-ndn/kmn/results.csv', 'a') as file:
-        file.write("{} {} {} {} {} {}\n".format(
+        file.write("{},{},{},{},{},{}\n".format(
                    id, time_ns(), rx_packets, tx_packets, rx_bytes, tx_bytes))
 
 class Redis(Application):
@@ -98,6 +98,11 @@ class Cli11(Application):
     def start(self):
         Application.start(
             self, 'python3 /mini-ndn/kmn/cli11.py {}'.format(SERV_IP), logfile='cli11.log')
+
+class Cli12(Application):
+    def start(self):
+        Application.start(
+            self, 'python3 /mini-ndn/kmn/cli12.py {}'.format(SERV_IP), logfile='cli12.log')
 
 if __name__ == '__main__':
     setLogLevel('info')
@@ -162,6 +167,18 @@ if __name__ == '__main__':
     # Start insertion
     cli11 = AppManager(ndn, [cli1], Cli11)
     collect_for([cli11])
+
+    cli12 = AppManager(ndn, [cli1], Cli12)
+    collect_for([cli12])
+
+    cli12 = AppManager(ndn, [cli1], Cli12)
+    cli22 = AppManager(ndn, [cli2], Cli12)
+    collect_for([cli12, cli22])
+
+    cli12 = AppManager(ndn, [cli1], Cli12)
+    cli22 = AppManager(ndn, [cli2], Cli12)
+    cli23 = AppManager(ndn, [cli3], Cli12)
+    collect_for([cli12, cli22, cli23])
 
     #info('Starting NFD on nodes\n')
     #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
