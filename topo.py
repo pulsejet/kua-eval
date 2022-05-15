@@ -21,6 +21,7 @@
 # along with Mini-NDN, e.g., in COPYING.md file.
 # If not, see <http://www.gnu.org/licenses/>.
 
+from time import sleep
 from mininet.log import setLogLevel, info
 from mininet.topo import Topo
 
@@ -33,8 +34,26 @@ from minindn.helpers.ndn_routing_helper import NdnRoutingHelper
 from minindn.helpers.ip_routing_helper import IPRoutingHelper
 
 
-class Redis(Application):
+def collect_stats(id, node):
+    rx_packets = node.cmd(
+        "cat /sys/class/net/{}-eth0/statistics/rx_packets".format(node.name)).strip()
+    tx_packets = node.cmd(
+        "cat /sys/class/net/{}-eth0/statistics/tx_packets".format(node.name)).strip()
+    rx_bytes = node.cmd(
+        "cat /sys/class/net/{}-eth0/statistics/rx_bytes".format(node.name)).strip()
+    tx_bytes = node.cmd(
+        "cat /sys/class/net/{}-eth0/statistics/tx_bytes".format(node.name)).strip()
 
+    node.cmd("echo '{} {} {} {} {} {}' >> /mini-ndn/kmn/results.csv".format(
+             id, node.name, rx_packets, tx_packets, rx_bytes, tx_bytes))
+
+
+def collect_all_stats(id, net):
+    for node in net.hosts:
+        collect_stats(id, node)
+
+
+class Redis(Application):
     def __init__(self, node):
         Application.__init__(self, node)
         self.confFile = '{}/redis.conf'.format(self.homeDir)
@@ -73,14 +92,31 @@ if __name__ == '__main__':
     storageNodes = [h for h in ndn.net.hosts if h.name[0] == 'r']
     redis = AppManager(ndn, storageNodes, Redis)
 
+    sleep(1)
+
     info('Starting redis cluster\n')
-    clnode = storageNodes[0]
+    clusternode = storageNodes[0]
     hostlist = ""
     for h in storageNodes:
         hostlist += h.IP() + ':6379 '
     cmd = 'redis-cli --cluster create --cluster-yes --cluster-replicas 1 {}'.format(
         hostlist)
-    print(clnode.cmd(cmd))
+    info(clusternode.cmd(cmd))
+    sleep(1)
+
+    # Get client nodes
+    cli1 = ndn.net.get('cli1')
+    cli2 = ndn.net.get('cli2')
+    cli3 = ndn.net.get('cli3')
+    cip = clusternode.IP()
+
+    # Collect stats
+    collect_all_stats(0, ndn.net)
+
+    # Insert large file
+    info('Inserting randfile\n')
+    info(cli1.cmd('cat /tmp/randfile | redis-cli -h {} -c -x set f1'.format(cip)))
+    collect_all_stats(1, ndn.net)
 
     #info('Starting NFD on nodes\n')
     #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
