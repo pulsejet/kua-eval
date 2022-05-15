@@ -21,7 +21,9 @@
 # along with Mini-NDN, e.g., in COPYING.md file.
 # If not, see <http://www.gnu.org/licenses/>.
 
-from time import sleep
+from time import sleep, time_ns
+from threading import Thread
+
 from mininet.log import setLogLevel, info
 from mininet.topo import Topo
 
@@ -33,24 +35,24 @@ from minindn.apps.nfd import Nfd
 from minindn.helpers.ndn_routing_helper import NdnRoutingHelper
 from minindn.helpers.ip_routing_helper import IPRoutingHelper
 
-
-def collect_stats(id, node):
-    rx_packets = node.cmd(
-        "cat /sys/class/net/{}-eth0/statistics/rx_packets".format(node.name)).strip()
-    tx_packets = node.cmd(
-        "cat /sys/class/net/{}-eth0/statistics/tx_packets".format(node.name)).strip()
-    rx_bytes = node.cmd(
-        "cat /sys/class/net/{}-eth0/statistics/rx_bytes".format(node.name)).strip()
-    tx_bytes = node.cmd(
-        "cat /sys/class/net/{}-eth0/statistics/tx_bytes".format(node.name)).strip()
-
-    node.cmd("echo '{} {} {} {} {} {}' >> /mini-ndn/kmn/results.csv".format(
-             id, node.name, rx_packets, tx_packets, rx_bytes, tx_bytes))
+SERV_IP = ""
 
 
 def collect_all_stats(id, net):
+    rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
+
     for node in net.hosts:
-        collect_stats(id, node)
+        rx_packets += int(node.cmd(
+            "cat /sys/class/net/{}-eth0/statistics/rx_packets".format(node.name)).strip())
+        tx_packets += int(node.cmd(
+            "cat /sys/class/net/{}-eth0/statistics/tx_packets".format(node.name)).strip())
+        rx_bytes += int(node.cmd(
+            "cat /sys/class/net/{}-eth0/statistics/rx_bytes".format(node.name)).strip())
+        tx_bytes += int(node.cmd(
+            "cat /sys/class/net/{}-eth0/statistics/tx_bytes".format(node.name)).strip())
+
+    node.cmd("echo '{} {} {} {} {} {}' >> /mini-ndn/kmn/results.csv".format(
+             id, time_ns(), rx_packets, tx_packets, rx_bytes, tx_bytes))
 
 
 class Redis(Application):
@@ -72,6 +74,12 @@ appendonly yes
     def start(self):
         Application.start(
             self, 'redis-server {}'.format(self.confFile), logfile=self.logFile)
+
+
+class Cli11(Application):
+    def start(self):
+        Application.start(
+            self, 'python3 /mini-ndn/kmn/rcli.py {}'.format(SERV_IP), logfile='cli11.log')
 
 
 if __name__ == '__main__':
@@ -113,14 +121,21 @@ if __name__ == '__main__':
     # Collect stats
     collect_all_stats(0, ndn.net)
 
-    # Insert large file
-    info('Inserting randfile\n')
-    info(cli1.cmd('cat /tmp/randfile | redis-cli -h {} -c -x set f1'.format(cip)))
-    collect_all_stats(1, ndn.net)
+    SERV_IP = cip
+
+    # Start first client
+    cli11 = AppManager(ndn, [cli1], Cli11)
+
+    # Collect stats
+    t = 0.1
+    total_time = 10
+    for i in range(int(total_time/t)):
+        collect_all_stats(round((i+1)*t, 1), ndn.net)
+        sleep(t)
 
     #info('Starting NFD on nodes\n')
     #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
-    MiniNDNCLI(ndn.net)
+    # MiniNDNCLI(ndn.net)
 
     ndn.stop()
