@@ -42,14 +42,15 @@ def collect_all_stats(id, net):
     rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
 
     for node in net.hosts:
-        rx_packets += int(node.cmd(
-            "cat /sys/class/net/{}-eth0/statistics/rx_packets".format(node.name)).strip())
-        tx_packets += int(node.cmd(
-            "cat /sys/class/net/{}-eth0/statistics/tx_packets".format(node.name)).strip())
-        rx_bytes += int(node.cmd(
-            "cat /sys/class/net/{}-eth0/statistics/rx_bytes".format(node.name)).strip())
-        tx_bytes += int(node.cmd(
-            "cat /sys/class/net/{}-eth0/statistics/tx_bytes".format(node.name)).strip())
+        for intf in node.intfNames():
+            rx_packets += int(node.cmd(
+                "cat /sys/class/net/{}/statistics/rx_packets".format(intf)).strip())
+            tx_packets += int(node.cmd(
+                "cat /sys/class/net/{}/statistics/tx_packets".format(intf)).strip())
+            rx_bytes += int(node.cmd(
+                "cat /sys/class/net/{}/statistics/rx_bytes".format(intf)).strip())
+            tx_bytes += int(node.cmd(
+                "cat /sys/class/net/{}/statistics/tx_bytes".format(intf)).strip())
 
     node.cmd("echo '{} {} {} {} {} {}' >> /mini-ndn/kmn/results.csv".format(
              id, time_ns(), rx_packets, tx_packets, rx_bytes, tx_bytes))
@@ -133,8 +134,8 @@ if __name__ == '__main__':
         collect_all_stats(round((i+1)*t, 1), ndn.net)
         sleep(t)
 
-    #info('Starting NFD on nodes\n')
-    #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
+    info('Starting NFD on nodes\n')
+    nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
     # MiniNDNCLI(ndn.net)
 

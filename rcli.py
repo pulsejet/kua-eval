@@ -6,8 +6,9 @@ r = redis.RedisCluster(host=sys.argv[1], port=6379)
 
 def writef(file, id, count):
     with open(file, 'rb') as f:
+        bs = f.read()
         for i in range(count):
-            r.set(id + str(i+1), f.read())
+            r.set(id + str(i+1), bs)
             print(file, id + str(i+1), 'written')
 
 
