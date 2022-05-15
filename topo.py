@@ -21,8 +21,9 @@
 # along with Mini-NDN, e.g., in COPYING.md file.
 # If not, see <http://www.gnu.org/licenses/>.
 
+import random
 from time import sleep, time_ns
-from threading import Thread
+from joblib import Parallel, delayed
 
 from mininet.log import setLogLevel, info
 from mininet.topo import Topo
@@ -37,24 +38,40 @@ from minindn.helpers.ip_routing_helper import IPRoutingHelper
 
 SERV_IP = ""
 
+def collect_stats(node):
+    rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
+
+    intflist = node.intfNames()
+    intfliststr = ' '.join(intflist)
+    output = node.cmd('/mini-ndn/kmn/stat.sh {}'.format(intfliststr)).splitlines()
+    output = [line.strip() for line in output]
+
+    for i, intf in enumerate(intflist):
+        count = 4
+        rx_packets += int(output[i*count+0])
+        tx_packets += int(output[i*count+1])
+        rx_bytes += int(output[i*count+2])
+        tx_bytes += int(output[i*count+3])
+
+    return (rx_packets, tx_packets, rx_bytes, tx_bytes)
 
 def collect_all_stats(id, net):
     rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
 
-    for node in net.hosts:
-        for intf in node.intfNames():
-            rx_packets += int(node.cmd(
-                "cat /sys/class/net/{}/statistics/rx_packets".format(intf)).strip())
-            tx_packets += int(node.cmd(
-                "cat /sys/class/net/{}/statistics/tx_packets".format(intf)).strip())
-            rx_bytes += int(node.cmd(
-                "cat /sys/class/net/{}/statistics/rx_bytes".format(intf)).strip())
-            tx_bytes += int(node.cmd(
-                "cat /sys/class/net/{}/statistics/tx_bytes".format(intf)).strip())
+    # results = [collect_stats(node) for node in net.hosts]
+    results = Parallel(n_jobs=-1, require='sharedmem',
+                       prefer="threads")(delayed(collect_stats)(node) for node in net.hosts)
 
-    node.cmd("echo '{} {} {} {} {} {}' >> /mini-ndn/kmn/results.csv".format(
-             id, time_ns(), rx_packets, tx_packets, rx_bytes, tx_bytes))
+    # sum up all results
+    for result in results:
+        rx_packets += result[0]
+        tx_packets += result[1]
+        rx_bytes += result[2]
+        tx_bytes += result[3]
 
+    with open('/mini-ndn/kmn/results.csv', 'a') as file:
+        file.write("{} {} {} {} {} {}\n".format(
+                   id, time_ns(), rx_packets, tx_packets, rx_bytes, tx_bytes))
 
 class Redis(Application):
     def __init__(self, node):
@@ -105,10 +122,11 @@ if __name__ == '__main__':
 
     info('Starting redis cluster\n')
     clusternode = storageNodes[0]
+    random.shuffle(storageNodes)
     hostlist = ""
     for h in storageNodes:
         hostlist += h.IP() + ':6379 '
-    cmd = 'redis-cli --cluster create --cluster-yes --cluster-replicas 1 {}'.format(
+    cmd = 'redis-cli --cluster create --cluster-yes --cluster-replicas 2 {}'.format(
         hostlist)
     info(clusternode.cmd(cmd))
     sleep(1)
@@ -129,14 +147,16 @@ if __name__ == '__main__':
 
     # Collect stats
     t = 0.1
-    total_time = 10
+    total_time = 20
     for i in range(int(total_time/t)):
         collect_all_stats(round((i+1)*t, 1), ndn.net)
         sleep(t)
 
-    info('Starting NFD on nodes\n')
-    nfds = AppManager(ndn, ndn.net.hosts, Nfd)
+    #info('Starting NFD on nodes\n')
+    #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
-    # MiniNDNCLI(ndn.net)
+    #MiniNDNCLI(ndn.net)
+
+    #collect_all_stats(-1, ndn.net)
 
     ndn.stop()
