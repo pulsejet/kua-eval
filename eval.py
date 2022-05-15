@@ -38,6 +38,8 @@ from minindn.helpers.ip_routing_helper import IPRoutingHelper
 
 SERV_IP = ""
 
+USE_REDIS = True
+
 def collect_stats(node):
     rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
 
@@ -114,37 +116,42 @@ if __name__ == '__main__':
 
     ndn.start()
 
-    # Calculate all routes for IP routing
-    IPRoutingHelper.calcAllRoutes(ndn.net)
-    info("IP routes configured\n")
+    if USE_REDIS:
+        # Calculate all routes for IP routing
+        IPRoutingHelper.calcAllRoutes(ndn.net)
+        info("IP routes configured\n")
 
-    info('Starting redis\n')
-    storageNodes = [h for h in ndn.net.hosts if h.name[0] == 'r']
-    redis = AppManager(ndn, storageNodes, Redis)
+        info('Starting redis\n')
+        storageNodes = [h for h in ndn.net.hosts if h.name[0] == 'r']
+        redis = AppManager(ndn, storageNodes, Redis)
 
-    sleep(1)
+        sleep(1)
 
-    info('Starting redis cluster\n')
-    clusternode = storageNodes[0]
-    random.shuffle(storageNodes)
-    hostlist = ""
-    for h in storageNodes:
-        hostlist += h.IP() + ':6379 '
-    cmd = 'redis-cli --cluster create --cluster-yes --cluster-replicas 2 {}'.format(
-        hostlist)
-    info(clusternode.cmd(cmd))
-    sleep(1)
+        info('Starting redis cluster\n')
+        clusternode = storageNodes[0]
+        random.shuffle(storageNodes)
+        hostlist = ""
+        for h in storageNodes:
+            hostlist += h.IP() + ':6379 '
+        cmd = 'redis-cli --cluster create --cluster-yes --cluster-replicas 2 {}'.format(
+            hostlist)
+        info(clusternode.cmd(cmd))
+        sleep(1)
+
+        SERV_IP = clusternode.IP()
+
+    else:
+        pass
+        #info('Starting NFD on nodes\n')
+        #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
     # Get client nodes
     cli1 = ndn.net.get('cli1')
     cli2 = ndn.net.get('cli2')
     cli3 = ndn.net.get('cli3')
-    cip = clusternode.IP()
 
     # Collect stats
     collect_all_stats(0, ndn.net)
-
-    SERV_IP = cip
 
     # Collect stats till process exits
     curr_time = 1
@@ -179,9 +186,6 @@ if __name__ == '__main__':
     cli22 = AppManager(ndn, [cli2], Cli12)
     cli23 = AppManager(ndn, [cli3], Cli12)
     collect_for([cli12, cli22, cli23])
-
-    #info('Starting NFD on nodes\n')
-    #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
 
     #MiniNDNCLI(ndn.net)
 
