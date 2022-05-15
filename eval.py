@@ -33,12 +33,16 @@ from minindn.util import MiniNDNCLI
 from minindn.apps.app_manager import AppManager
 from minindn.apps.application import Application
 from minindn.apps.nfd import Nfd
+from minindn.apps.nlsr import Nlsr
+from minindn.helpers.nfdc import Nfdc
 from minindn.helpers.ndn_routing_helper import NdnRoutingHelper
 from minindn.helpers.ip_routing_helper import IPRoutingHelper
 
-SERV_IP = ""
+# Configuration
+USE_REDIS = False
 
-USE_REDIS = True
+# Auto filled
+SERV_IP = ""
 
 def collect_stats(node):
     rx_packets, tx_packets, rx_bytes, tx_bytes = 0, 0, 0, 0
@@ -95,6 +99,19 @@ appendonly yes
         Application.start(
             self, 'redis-server {}'.format(self.confFile), logfile=self.logFile)
 
+class KuaNode(Application):
+    def __init__(self, node):
+        Application.__init__(self, node)
+        self.name = '/knode-{}'.format(node.name)
+
+    def start(self):
+        Application.start(
+            self, '/mini-ndn/kmn/kua/build/bin/kua /kua {}'.format(self.name), logfile='kua.log')
+
+class KuaMaster(Application):
+    def start(self):
+        Application.start(
+            self, '/mini-ndn/kmn/kua/build/bin/kua-master /kua /master', logfile='kua-master.log')
 
 class Cli11(Application):
     def start(self):
@@ -116,19 +133,20 @@ if __name__ == '__main__':
 
     ndn.start()
 
+    storageNodes = [h for h in ndn.net.hosts if h.name[0] == 'r']
+    clusternode = storageNodes[0]
+
     if USE_REDIS:
         # Calculate all routes for IP routing
         IPRoutingHelper.calcAllRoutes(ndn.net)
         info("IP routes configured\n")
 
         info('Starting redis\n')
-        storageNodes = [h for h in ndn.net.hosts if h.name[0] == 'r']
         redis = AppManager(ndn, storageNodes, Redis)
 
         sleep(1)
 
         info('Starting redis cluster\n')
-        clusternode = storageNodes[0]
         random.shuffle(storageNodes)
         hostlist = ""
         for h in storageNodes:
@@ -141,9 +159,30 @@ if __name__ == '__main__':
         SERV_IP = clusternode.IP()
 
     else:
-        pass
-        #info('Starting NFD on nodes\n')
-        #nfds = AppManager(ndn, ndn.net.hosts, Nfd)
+        info('Starting NFD on nodes\n')
+        nfds = AppManager(ndn, ndn.net.hosts, Nfd)
+
+        info('Starting NLSR on nodes\n')
+        nlsrs = AppManager(ndn, ndn.net.hosts, Nlsr)
+
+        sleep(2)
+
+        info('Adding static routes to NFD\n')
+        grh = NdnRoutingHelper(ndn.net, 'udp', 'link-state')
+        grh.addOrigin(storageNodes, ['/kua/sync'])
+        grh.calculateNPossibleRoutes()
+
+        info('Setting NFD strategy to multicast on all nodes with prefix\n')
+        for node in ndn.net.hosts:
+            Nfdc.setStrategy(node, "/kua/sync", Nfdc.STRATEGY_MULTICAST)
+
+        info('Starting Kua nodes\n')
+        kuas = AppManager(ndn, storageNodes, KuaNode)
+        sleep(5)
+
+        info('Starting Kua master\n')
+        kuamaster = AppManager(ndn, [clusternode], KuaMaster)
+        sleep(10)
 
     # Get client nodes
     cli1 = ndn.net.get('cli1')
@@ -172,21 +211,21 @@ if __name__ == '__main__':
             sleep(period)
 
     # Start insertion
-    cli11 = AppManager(ndn, [cli1], Cli11)
-    collect_for([cli11])
+    # cli11 = AppManager(ndn, [cli1], Cli11)
+    # collect_for([cli11])
 
-    cli12 = AppManager(ndn, [cli1], Cli12)
-    collect_for([cli12])
+    # cli12 = AppManager(ndn, [cli1], Cli12)
+    # collect_for([cli12])
 
-    cli12 = AppManager(ndn, [cli1], Cli12)
-    cli22 = AppManager(ndn, [cli2], Cli12)
-    collect_for([cli12, cli22])
+    # cli12 = AppManager(ndn, [cli1], Cli12)
+    # cli22 = AppManager(ndn, [cli2], Cli12)
+    # collect_for([cli12, cli22])
 
-    cli12 = AppManager(ndn, [cli1], Cli12)
-    cli22 = AppManager(ndn, [cli2], Cli12)
-    cli23 = AppManager(ndn, [cli3], Cli12)
-    collect_for([cli12, cli22, cli23])
+    # cli12 = AppManager(ndn, [cli1], Cli12)
+    # cli22 = AppManager(ndn, [cli2], Cli12)
+    # cli23 = AppManager(ndn, [cli3], Cli12)
+    # collect_for([cli12, cli22, cli23])
 
-    #MiniNDNCLI(ndn.net)
+    MiniNDNCLI(ndn.net)
 
     ndn.stop()
