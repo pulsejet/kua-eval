@@ -115,8 +115,11 @@ class KuaMaster(Application):
 
 class Cli11(Application):
     def start(self):
-        Application.start(
-            self, 'python3 /mini-ndn/kmn/cli11.py {}'.format(SERV_IP), logfile='cli11.log')
+        command = 'python3 /mini-ndn/kmn/cli11.py {}'.format(SERV_IP)
+        if not USE_REDIS:
+            command = '/mini-ndn/kmn/kua-cli11.sh'
+
+        Application.start(self, command, logfile='cli11.log')
 
 class Cli12(Application):
     def start(self):
@@ -182,7 +185,7 @@ if __name__ == '__main__':
 
         info('Starting Kua master\n')
         kuamaster = AppManager(ndn, [clusternode], KuaMaster)
-        sleep(10)
+        sleep(30)
 
     # Get client nodes
     cli1 = ndn.net.get('cli1')
@@ -211,8 +214,8 @@ if __name__ == '__main__':
             sleep(period)
 
     # Start insertion
-    # cli11 = AppManager(ndn, [cli1], Cli11)
-    # collect_for([cli11])
+    cli11 = AppManager(ndn, [cli1], Cli11)
+    collect_for([cli11])
 
     # cli12 = AppManager(ndn, [cli1], Cli12)
     # collect_for([cli12])
@@ -226,6 +229,6 @@ if __name__ == '__main__':
     # cli23 = AppManager(ndn, [cli3], Cli12)
     # collect_for([cli12, cli22, cli23])
 
-    MiniNDNCLI(ndn.net)
+    # MiniNDNCLI(ndn.net)
 
     ndn.stop()
